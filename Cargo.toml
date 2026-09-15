@@ -2,6 +2,9 @@
 name = "julia-pkg-cli"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "A Cargo-style command-line interface for Julia's package manager"
+repository = "https://github.com/Subham019/julia-pkg-cli"
 
 [[bin]]
 name = "jlpkg"
