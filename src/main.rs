@@ -28,6 +28,8 @@ fn main() {
 
     match command.as_str() {
         "help" | "-h" | "--help" => help::print_help(),
+        "version" | "-V" | "--version" => {println!("jlpkg {}", env!("CARGO_PKG_VERSION"))}
+        "docs"                   => help::write_docs(&args[2..]),
 
         "new"             => commands::new::new(&args[2..]),
         "init"   | "i"    => commands::init::init(&args[2..]),

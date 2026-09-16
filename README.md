@@ -13,11 +13,6 @@ $ jlpkg tree
 $ jlpkg run --threads 6 fit.jl
 ```
 
-It also fills the one real gap in `Pkg`: there is no equivalent of `cargo init`
-for a directory that already contains files. `Pkg.generate` refuses a non-empty
-directory, which is exactly the case you hit when adding a project file to
-existing analysis code. `jlpkg init` handles it.
-
 ## Requirements
 
 - **Julia** on `PATH`. Developed and tested against 1.13.
@@ -35,77 +30,56 @@ $ cargo build --release
 
 The binary is `target/release/jlpkg`. Copy it somewhere on your `PATH`.
 
-## Quick start
+## How it compares
 
-Turn a directory that already has Julia code into a project:
+| jlpkg              | cargo                     | Julia `Pkg`                  |
+| ------------------ | ------------------------- | ---------------------------- |
+| `jlpkg new <name>` | `cargo new`               | `Pkg.generate("<name>")`     |
+| `jlpkg init`       | `cargo init`              | — ¹                          |
+| `jlpkg add X`      | `cargo add X`             | `Pkg.add("X")`               |
+| `jlpkg remove X`   | `cargo remove X`          | `Pkg.rm("X")`                |
+| `jlpkg update`     | `cargo update`            | `Pkg.update()`               |
+| `jlpkg compat`     | *implicit in `cargo add`* | `Pkg.compat(current=true)` ² |
+| `jlpkg status`     | —                         | `Pkg.status()`               |
+| `jlpkg fetch`      | `cargo fetch`             | `Pkg.instantiate()`          |
+| `jlpkg build`      | `cargo build`             | `Pkg.precompile()`           |
+| `jlpkg test`       | `cargo test`              | `Pkg.test()`                 |
+| `jlpkg run f.jl`   | `cargo run`               | `julia --project f.jl`       |
+| `jlpkg repl`       | —                         | `julia --project`            |
+| `jlpkg tree`       | `cargo tree`              | — ³                          |
+| `jlpkg why X`      | `cargo tree -i X`         | `Pkg.why("X")`               |
+| `jlpkg clean`      | `cargo clean`             | `Pkg.gc()`                   |
+| `jlpkg bundle`     | `cargo vendor`            | — ⁴                          |
+| `jlpkg check`      | `cargo build --offline`   | —                            |
+| `jlpkg vendor`     | —                         | —                            |
+| `jlpkg docs`       | —                         | —                            |
 
-```console
-$ cd my-analysis
-$ jlpkg init
-Added project identity to .../my-analysis/Project.toml
+¹ `Pkg.generate` refuses a directory that already contains files, so there is
+no way to add a project file to existing code. `jlpkg init` does it in place —
+the gap that prompted this tool.
 
-$ jlpkg add DataFrames CSV MixedModels
-$ jlpkg status
-```
+² `Pkg.add` writes `[compat]` bounds automatically, but only when
+`Project.toml` has both a `name` and a `uuid`. A bare environment created by
+`Pkg.activate` has neither, so such projects silently record no bounds at all
+and `update` is free to walk a dependency across a major version. `jlpkg init`
+adds the fields; `jlpkg compat` backfills bounds for what is already there.
 
-Reproduce it somewhere else:
+³ `Pkg.status()` is flat. `jlpkg tree` renders the whole graph, marking a
+subtree already shown with `(*)` and hiding standard libraries unless `--all`
+is given.
 
-```console
-$ git clone <your-repo> && cd <your-repo>
-$ jlpkg fetch      # install the exact versions in Manifest.toml
-$ jlpkg build      # ... and precompile them
-```
+⁴ See below.
 
-## Commands
-
-Run `jlpkg help` for the full list, or `jlpkg <command> --help` for any one of
-them.
-
-| Command | |
-|---|---|
-| `new <name>` | Create a new package in `./<name>` |
-| `init` | Set up the current directory as a project |
-| `compat` | Record version bounds for the current dependencies |
-| `add`, `a` | Add dependencies and record their bounds |
-| `remove`, `rm` | Remove dependencies (asks for confirmation) |
-| `update`, `up` | Update within the recorded bounds |
-| `status`, `st` | List direct dependencies and versions |
-| `fetch`, `sync` | Install the versions pinned in `Manifest.toml` |
-| `build`, `b` | Install, then precompile |
-| `test`, `t` | Run tests |
-| `check` | Verify the environment loads with no network |
-| `clean` | Drop precompile caches and collect garbage |
-| `run`, `r` | Run a script in the project environment |
-| `repl` | Start a REPL in the project environment |
-| `tree` | Print the dependency tree |
-| `why` | Explain why a dependency is present |
-| `bundle` | Build a self-contained depot in `./.julia` |
-| `vendor` | Copy dependency sources into `./vendor` |
-
-Every command searches upward from the current directory for `Project.toml`,
-the way cargo finds `Cargo.toml`, so they work from anywhere inside a project.
-
-## Version bounds
-
-`Pkg.add` writes `[compat]` entries automatically — but only when the active
-project is a *package*, meaning `Project.toml` has both a `name` and a `uuid`.
-A bare environment created by `Pkg.activate` has neither, so projects that grew
-that way silently record no bounds at all, and `update` is then free to walk a
-dependency across a major version.
-
-`jlpkg init` adds those fields, which switches the behaviour on. For a project
-that already has dependencies, `jlpkg compat` backfills bounds from the
-versions currently resolved.
-
-## `bundle` vs `vendor`
+## `bundle` and `vendor`
 
 These look similar and are not interchangeable.
 
-**`bundle`** builds a project-local depot at `./.julia` containing the packages,
+**`bundle`** builds a project-local depot at `./.julia` holding the packages,
 binary artifacts, registry and precompile caches the project needs. Once it
 exists, every `jlpkg` command uses it instead of `~/.julia`, and the project
-builds and runs with no network. This is the real equivalent of
-`cargo vendor` plus its source-replacement config. Verify it with `jlpkg check`.
+builds and runs with no network. This is the real counterpart to `cargo vendor`
+*plus* its source-replacement config — Julia has no per-project setting that
+can redirect the depot, so the tool supplies it.
 
 ```console
 $ jlpkg bundle
@@ -113,13 +87,20 @@ $ jlpkg check
 offline check passed
 ```
 
-A bundle is platform-specific: binary artifacts and precompile caches are tied
-to the operating system, CPU and Julia version that produced them.
+A bundle is platform-specific: artifacts and precompile caches are tied to the
+operating system, CPU and Julia version that produced them.
 
-**`vendor`** copies dependency *sources* into `./vendor` for reading. It is not
-consulted when loading packages — Julia resolves its depot before it reads the
-project, so no in-project directory can redirect that. Use it to inspect
-sources, not to make a project self-contained.
+**`vendor`** copies dependency *sources* into `./vendor` for reading. It is
+never consulted when loading packages, because Julia resolves its depot before
+it reads the project. Use it to inspect source, not to make a project
+self-contained.
+
+## Reference
+
+`jlpkg help` lists every command and `jlpkg <command> --help` documents one.
+The full reference — project discovery, exit codes, and the rules that apply
+across commands — is in [jlpkg.md](jlpkg.md), which `jlpkg docs` writes
+into the current directory.
 
 ## Platform support
 
@@ -130,4 +111,4 @@ been run — reports welcome.
 
 ## License
 
-See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

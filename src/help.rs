@@ -2,6 +2,23 @@
 /// so the caller can fall through to its usual unknown-command handling.
 pub fn print_command_help(command: &str) -> bool {
     let text = match command {
+        "docs" => {
+            "USAGE
+    jlpkg docs [-o <file>] [--force] [--stdout]
+
+DESCRIPTION
+    Write jlpkg's command reference into the current directory as
+    jlpkg.md. If the target already exists nothing is written, pass -o
+    to choose another name, or --force to overwrite it.
+
+OPTIONS
+    -o, --output <file>     Write to <file> instead of jlpkg.md
+    -f, --force             Overwrite an existing file
+    --stdout                Print to standard output instead of writing.
+                            Shell redirection bypasses the overwrite check.
+    -h, --help              Show this help"
+        }
+
         "new" => {
             "USAGE
     jlpkg new <name>
@@ -275,6 +292,11 @@ A Cargo-style command-line interface for Julia's package manager.
 USAGE
     jlpkg <command> [arguments]
 
+GENERAL
+    help                    Show this help
+    version, -V             Show the version
+    docs [-o <file>]        Write the jlpkg command reference into this directory
+
 PROJECT
     new <name>              Create a new package in ./<name>
     init [options]          Set up the current directory as a project
@@ -333,4 +355,62 @@ instead of the normal user depot.
 
 Run `jlpkg help`, `jlpkg -h` or `jlpkg --help` to see help."#
     );
+}
+
+/* Generate jlpkg.md of Julia-Pkg-Cli for LLM support */
+const DOCS: &str = include_str!("../jlpkg.md");
+
+pub fn write_docs(args: &[String]) {
+    let mut force = false;
+    let mut to_stdout = false;
+    let mut output = "jlpkg.md";
+
+    let mut i = 0;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "-f" | "--force"  => force = true,
+            "--stdout"        => to_stdout = true,
+            "-o" | "--output" => {
+                i += 1;
+
+                match args.get(i) {
+                    Some(path) => output = path.as_str(),
+                    None => {
+                        eprintln!("-o requires a file path");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            other => {
+                eprintln!("Unknown docs option: {}", other);
+                eprintln!("Usage: jlpkg docs [-o <file>] [--force] [--stdout]");
+                std::process::exit(1);
+            }
+        }
+
+        i += 1;
+    }
+
+    if to_stdout {
+        print!("{DOCS}");
+        return;
+    }
+
+    let path = std::path::Path::new(output);
+
+    if path.exists() && !force {
+        eprintln!("{} already exists; nothing was written.", path.display());
+        eprintln!();
+        eprintln!("To write it under a different name: jlpkg docs -o <file>");
+        eprintln!("To overwrite it:                     jlpkg docs --force");
+        std::process::exit(1);
+    }
+
+    if let Err(error) = std::fs::write(path, DOCS) {
+        eprintln!("Failed to write {}: {}", path.display(), error);
+        std::process::exit(1);
+    }
+
+    println!("Wrote {}", path.display());
 }
